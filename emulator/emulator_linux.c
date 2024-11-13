@@ -25,7 +25,15 @@ typedef int topen(const char *path, int oflag);
 static topen* real_open = NULL;
 static tioctl * real_ioctl = NULL;
 
+#define DIRECT_HOOK
 
+#ifdef DIRECT_HOOK
+#define md40_sendto sendto
+#define md40_recvfrom recvfrom
+#define md40_select select
+#define md34_open open
+#define md34_ioctl ioctl
+#endif
 
 int md34_open(const char *path, int oflag){
     // TODO: add !strcmp(path,MD34_PATH_LPT) back once we figure out wtf the deal is with LPT
@@ -55,7 +63,7 @@ static tselect * real_select = NULL;
 
 int md40_last_sock_fd = 0;
 unsigned char md40_last_packet[MD40_PACKET_SIZE] = {0x00};
-static ssize_t md40_sendto(int socket, const void *message, size_t length, int flags, void *dest_addr, int dest_len){
+ssize_t md40_sendto(int socket, const void *message, size_t length, int flags, void *dest_addr, int dest_len){
     if(!memcmp(dest_addr+2,MD40_DAEMON_ADDR,strlen(MD40_DAEMON_ADDR))){
         md40_last_sock_fd = socket;
         memcpy(md40_last_packet,message,length);
@@ -64,7 +72,7 @@ static ssize_t md40_sendto(int socket, const void *message, size_t length, int f
     return real_sendto(socket,message,length,flags,dest_addr,dest_len);
 }
 
-static ssize_t md40_recvfrom(int socket, void *restrict buffer, size_t length, int flags, void *restrict address, int *restrict address_len){
+ssize_t md40_recvfrom(int socket, void *restrict buffer, size_t length, int flags, void *restrict address, int *restrict address_len){
     if(!memcmp(address+2,MD40_DAEMON_ADDR,strlen(MD40_DAEMON_ADDR))){
         memcpy(buffer,md40_last_packet,MD40_PACKET_SIZE);
         memset(md40_last_packet,0x00,MD40_PACKET_SIZE);
@@ -74,7 +82,7 @@ static ssize_t md40_recvfrom(int socket, void *restrict buffer, size_t length, i
     return real_recvfrom(socket,buffer,length,flags,address,address_len);
 }
 
-static int md40_select(int nfds, void *readfds, void *writefds, void *exceptfds, void *timeout){
+int md40_select(int nfds, void *readfds, void *writefds, void *exceptfds, void *timeout){
     if(nfds-1 == md40_last_sock_fd){
         HandlePacket(md40_last_packet);
         return 1;
@@ -87,13 +95,29 @@ static int md40_select(int nfds, void *readfds, void *writefds, void *exceptfds,
 // Startup Stuff
 void __attribute__((constructor)) init_emulator_linux();
 
+#define _GNU_SOURCE
+#define __USE_GNU
+#include <dlfcn.h>
 void init_emulator_linux(){
     InitEmulator();
+    // Honestly Battery, very clever, but not compatible with all libc versions
+    // Will replace with just the good'old expose and call
+    // Just because for regular executables, it will just search the
+#ifdef DIRECT_HOOK
     // Hook the Following Syscalls for API v4.0
-    HotPatch_patch("libc.so.6","sendto",9,md40_sendto,(void**)&real_sendto);
-    HotPatch_patch("libc.so.6","recvfrom",0x0A,md40_recvfrom,(void**)&real_recvfrom);
-    HotPatch_patch("libc.so.6","select",0x0B,md40_select,(void**)&real_select);
+    real_sendto = dlsym(RTLD_NEXT, "sendto");
+    real_recvfrom = dlsym(RTLD_NEXT, "recvfrom");
+    real_select = dlsym(RTLD_NEXT, "select");
+    real_open = dlsym(RTLD_NEXT, "open");
+    real_ioctl = dlsym(RTLD_NEXT, "ioctl");
     // Hook the Following Syscalls for API v3.x - sometimes, you can leave the target size at 0.
-    HotPatch_patch("libc.so.6","open",10,md34_open,(void**)&real_open);
-    HotPatch_patch("libc.so.6","ioctl",0x0A,md34_ioctl,(void**)&real_ioctl);
+#else
+    // Hook the Following Syscalls for API v4.0
+    HotPatch_patch(/*"libc.so.6"*/NULL,"sendto",9,md40_sendto,(void**)&real_sendto);
+    HotPatch_patch(/*"libc.so.6"*/NULL,"recvfrom",0x0A,md40_recvfrom,(void**)&real_recvfrom);
+    HotPatch_patch(/*"libc.so.6"*/NULL,"select",0x0B,md40_select,(void**)&real_select);
+    // Hook the Following Syscalls for API v3.x - sometimes, you can leave the target size at 0.
+    HotPatch_patch(/*"libc.so.6"*/NULL,"open",10,md34_open,(void**)&real_open);
+    HotPatch_patch(/*"libc.so.6"*/NULL,"ioctl",0x0A,md34_ioctl,(void**)&real_ioctl);
+#endif
 }

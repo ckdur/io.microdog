@@ -5,6 +5,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY  "${CMAKE_BINARY_DIR}/")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/")
 set(CMAKE_SHARED_LIBRARY_PREFIX  "")
 set(CMAKE_C_FLAGS_RELEASE "-O0")
+set(CMAKE_C_FLAGS_DEBUG "-O0 -DDEBUG -g")
 project(emulator_linux C)
 add_library(emulator_linux SHARED
         ../common/target.h
