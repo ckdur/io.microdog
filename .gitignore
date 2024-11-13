@@ -1,2 +1,7 @@
 # Project exclude paths
 /cmake-build-release/
+*.o
+*.so
+build
+*.a
+obj
