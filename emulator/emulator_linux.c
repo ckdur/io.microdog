@@ -35,7 +35,10 @@ static tioctl * real_ioctl = NULL;
 #define md34_ioctl ioctl
 #endif
 
+void do_preloads();
+
 int md34_open(const char *path, int oflag){
+    if(real_open == NULL) do_preloads();
     // TODO: add !strcmp(path,MD34_PATH_LPT) back once we figure out wtf the deal is with LPT
     if(!strcmp(path,MD34_PATH_USB)){
         return MD34_FAKE_FD;
@@ -45,6 +48,7 @@ int md34_open(const char *path, int oflag){
 
 
 int md34_ioctl(int fd, int request, void * data){
+    if(real_ioctl == NULL) do_preloads();
     if(fd == MD34_FAKE_FD){
         HandlePacket(*(unsigned int*)data);
         return 0;
@@ -64,6 +68,7 @@ static tselect * real_select = NULL;
 int md40_last_sock_fd = 0;
 unsigned char md40_last_packet[MD40_PACKET_SIZE] = {0x00};
 ssize_t md40_sendto(int socket, const void *message, size_t length, int flags, void *dest_addr, int dest_len){
+    if(real_sendto == NULL) do_preloads();
     if(!memcmp(dest_addr+2,MD40_DAEMON_ADDR,strlen(MD40_DAEMON_ADDR))){
         md40_last_sock_fd = socket;
         memcpy(md40_last_packet,message,length);
@@ -73,6 +78,7 @@ ssize_t md40_sendto(int socket, const void *message, size_t length, int flags, v
 }
 
 ssize_t md40_recvfrom(int socket, void *restrict buffer, size_t length, int flags, void *restrict address, int *restrict address_len){
+    if(real_recvfrom == NULL) do_preloads();
     if(!memcmp(address+2,MD40_DAEMON_ADDR,strlen(MD40_DAEMON_ADDR))){
         memcpy(buffer,md40_last_packet,MD40_PACKET_SIZE);
         memset(md40_last_packet,0x00,MD40_PACKET_SIZE);
@@ -83,6 +89,7 @@ ssize_t md40_recvfrom(int socket, void *restrict buffer, size_t length, int flag
 }
 
 int md40_select(int nfds, void *readfds, void *writefds, void *exceptfds, void *timeout){
+    if(real_select == NULL) do_preloads();
     if(nfds-1 == md40_last_sock_fd){
         HandlePacket(md40_last_packet);
         return 1;
@@ -98,8 +105,7 @@ void __attribute__((constructor)) init_emulator_linux();
 #define _GNU_SOURCE
 #define __USE_GNU
 #include <dlfcn.h>
-void init_emulator_linux(){
-    InitEmulator();
+void do_preloads(){
     // Honestly Battery, very clever, but not compatible with all libc versions
     // Will replace with just the good'old expose and call
     // Just because for regular executables, it will just search the
@@ -121,3 +127,9 @@ void init_emulator_linux(){
     HotPatch_patch(/*"libc.so.6"*/NULL,"ioctl",0x0A,md34_ioctl,(void**)&real_ioctl);
 #endif
 }
+
+void init_emulator_linux(){
+    InitEmulator();
+    if(real_open == NULL) do_preloads();
+}
+
