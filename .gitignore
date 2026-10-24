@@ -3,5 +3,6 @@
 *.o
 *.so
 build
+build.*
 *.a
 obj
